@@ -1,0 +1,5 @@
+1. The event loop handles outside events and turns them into actions known as callbacks.
+2. The event loop is started when node starts a script 
+3. The events loop allows node to do asynchonous callback programming.
+4. Node will stop the event loop when there is no callback to run.
+5. 

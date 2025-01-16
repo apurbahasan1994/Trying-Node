@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node JS Streams</title>
+    <style>
+        .main-container {
+            height: 100%;
+            width: 100%;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        .btn-container {
+            display: flex;
+            gap: 20px;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0px;
+            padding: 0px;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            height: 200px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
+        }
+        .card .name {
+            color: rgb(63, 55, 52);
+            font-size: 20px;
+        }
+        .card .rating {
+            color: rgb(192, 181, 181);
+        }
+        .btn {
+            border: 0px;
+            outline: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: black;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        .btn:active,
+        .btn::selection {
+            outline: none;
+        }
+        .stream {
+            background-color: rgb(147, 227, 147);
+        }
+        .cancel-stream {
+            background-color: rgb(223, 122, 122);
+        }
+        .stream:hover {
+            background-color: rgb(39, 201, 39);
+        }
+        .cancel-stream:hover {
+            background-color: rgb(229, 69, 69);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="btn-container">
+            <button class="btn stream">Stream Data</button>
+            <button class="btn cancel-stream">Cancel Streaming</button>
+        </div>
+        <div class="cards"></div>
+    </div>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const start = document.querySelector('.stream');
+            const end = document.querySelector('.cancel-stream');
+            const cards = document.querySelector('.cards');
+            let buffer = [];
+            let abortController = new AbortController();
+
+            function parseChunks() {
+                let tempBuffer = "";
+                return new TransformStream({
+                    transform(chunk, controller) {
+                        tempBuffer += chunk;
+                        const lines = tempBuffer.split("\n");
+                        tempBuffer = lines.pop();
+                        for (const line of lines) {
+                            try {
+                                controller.enqueue(JSON.parse(line));
+                            } catch (error) {
+                                console.error("JSON parse error:", error);
+                            }
+                        }
+                    },
+                    flush(controller) {
+                        if (tempBuffer.trim()) {
+                            try {
+                                controller.enqueue(JSON.parse(tempBuffer));
+                            } catch (error) {
+                                console.error("JSON parse error on flush:", error);
+                            }
+                        }
+                    }
+                });
+            }
+
+            async function consumeAPI(signal) {
+                const response = await fetch('http://localhost:5000', { signal });
+                return response.body
+                    .pipeThrough(new TextDecoderStream())
+                    .pipeThrough(parseChunks());
+            }
+
+            function updateDOM() {
+                if (buffer.length > 0) {
+                    const fragment = document.createDocumentFragment();
+                    const batch = buffer.splice(0, 10); // Process in chunks of 10
+                    batch.forEach(chunk => {
+                        const card = document.createElement('div');
+                        card.classList.add('card');
+                        card.innerHTML = `
+                            <span class="name">Movie title: ${chunk.title}</span>
+                            <span class="rating">Rating: ${chunk.rating}</span>`;
+                        fragment.appendChild(card);
+                    });
+                    cards.appendChild(fragment);
+                }
+                if (buffer.length > 0) {
+                    requestAnimationFrame(updateDOM);
+                }
+            }
+
+            end.addEventListener('click', () => {
+                abortController.abort();
+                abortController = new AbortController();
+            });
+
+            start.addEventListener('click', () => {
+                (async () => {
+                    const readableStream = await consumeAPI(abortController.signal);
+                    readableStream.pipeTo(
+                        new WritableStream({
+                            write(chunk) {
+                                buffer.push(chunk);
+                                if (buffer.length === 10) {
+                                    requestAnimationFrame(updateDOM);
+                                }
+                            }
+                        }), { signal: abortController.signal }
+                    );
+                })();
+            });
+        });
+    </script>
+</body>
+</html>
