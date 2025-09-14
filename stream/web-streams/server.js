@@ -12,9 +12,6 @@ const headers = {
 
 const port = 5000;
 
-
-
-
 function createWritableStream(res) {
     return new WritableStream({
         write(chunk) {
